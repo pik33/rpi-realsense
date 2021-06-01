@@ -12,7 +12,7 @@
 #include <stdio.h>
 
 int init1(int dummy);
-char * depth(int dummy);
+long depth(int dummy);
 int exit1();
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -49,3 +49,4 @@ char* buffer;
 char* out;
 uint16_t one_meter;
 rs2_device* dev ;
+char fb[64][48];

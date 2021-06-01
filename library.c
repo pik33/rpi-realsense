@@ -89,77 +89,56 @@ int init1(int dummy)
     return (e1);
 }
 
-char * depth(int dummy)
+long depth(int dummy)
 {
-        rs2_error* e = 0;
-    while (1)
+rs2_error* e = 0;
+//while (1)
+for(int kwas=0; kwas<100; kwas++)
+  {
+  rs2_frame* frames = rs2_pipeline_wait_for_frames(pipeline, RS2_DEFAULT_TIMEOUT, &e);
+  int num_of_frames = rs2_embedded_frames_count(frames, &e);
+  int i;
+  for (i = 0; i < num_of_frames; ++i)
     {
-        
-        // This call waits until a new composite_frame is available
-        // composite_frame holds a set of frames. It is used to prevent frame drops
-        // The returned object should be released with rs2_release_frame(...)
-        rs2_frame* frames = rs2_pipeline_wait_for_frames(pipeline, RS2_DEFAULT_TIMEOUT, &e);
- 
-
-        // Returns the number of frames embedded within the composite frame
-        int num_of_frames = rs2_embedded_frames_count(frames, &e);
-
-
-        int i;
-        for (i = 0; i < num_of_frames; ++i)
+    rs2_frame* frame = rs2_extract_frame(frames, i, &e);
+    if (0 == rs2_is_frame_extendable_to(frame, RS2_EXTENSION_DEPTH_FRAME, &e))
+      {
+      rs2_release_frame(frame);
+      continue;
+      }
+    const uint16_t* depth_frame_data = (const uint16_t*)(rs2_get_frame_data(frame, &e));
+    out = buffer;
+    int x, y, i;
+    int* coverage = calloc(row_length, sizeof(int));
+    for (y = 0; y < height; ++y)
+      {
+      for (x = 0; x < width; ++x)
         {
-            // The retunred object should be released with rs2_release_frame(...)
-            rs2_frame* frame = rs2_extract_frame(frames, i, &e);
-
-            // Check if the given frame can be extended to depth frame interface
-            // Accept only depth frames and skip other frames
-            if (0 == rs2_is_frame_extendable_to(frame, RS2_EXTENSION_DEPTH_FRAME, &e))
-            {
-                rs2_release_frame(frame);
-                continue;
-            }
-
-            /* Retrieve depth data, configured as 16-bit depth values */
-            const uint16_t* depth_frame_data = (const uint16_t*)(rs2_get_frame_data(frame, &e));
-       
-            /* Print a simple text-based representation of the image, by breaking it into 10x5 pixel regions and approximating the coverage of pixels within one meter */
-            out = buffer;
-            int x, y, i;
-            int* coverage = calloc(row_length, sizeof(int));
-
-            for (y = 0; y < height; ++y)
-            {
-                for (x = 0; x < width; ++x)
-                {
-                    // Create a depth histogram to each row
-                    int coverage_index = x / WIDTH_RATIO;
-                    int depth = *depth_frame_data++;
-                    if (depth > 0 && depth < one_meter)
-                        ++coverage[coverage_index];
-                }
-
-                if ((y % HEIGHT_RATIO) == (HEIGHT_RATIO-1))
-                {
-                    for (i = 0; i < (row_length); ++i)
-                    {
-                        static const char* pixels = " .:nhBXWW";
-                        int pixel_index = (coverage[i] / (HEIGHT_RATIO * WIDTH_RATIO / sizeof(pixels)));
-                        *out++ = pixels[pixel_index];
-                        coverage[i] = 0;
-                    }
-                    *out++ = '\n';
-                }
-            }
-            *out++ = 0;
-            printf("\n%s", buffer);
-
-            free(coverage);
-            rs2_release_frame(frame);
+        int coverage_index = x / WIDTH_RATIO;
+        int depth = *depth_frame_data++;
+        if (depth > 0 && depth < one_meter)
+          ++coverage[coverage_index];
         }
-
-        rs2_release_frame(frames);
+        if ((y % HEIGHT_RATIO) == (HEIGHT_RATIO-1))
+          {
+          for (i = 0; i < (row_length); ++i)
+            {
+            static const char* pixels = " .:nhBXWW";
+            int pixel_index = (coverage[i] / (HEIGHT_RATIO * WIDTH_RATIO / sizeof(pixels)));
+            *out++ = pixels[pixel_index];
+            coverage[i] = 0;
+            }
+          *out++ = '\n';
+          }
+        }
+      *out++ = 0;
+      printf("\n%s", buffer);
+      free(coverage);
+      rs2_release_frame(frame);
     }
-
+  rs2_release_frame(frames);
+  }
+return (long)&fb;
 }
 
 int exit1(){
