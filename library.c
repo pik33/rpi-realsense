@@ -143,18 +143,35 @@ return (long)&fb;
 
 int exit1(){
      rs2_error* e = 0;
+ 
     // Stop the pipeline streaming
+    printf("Stopping pipeline \n");
     rs2_pipeline_stop(pipeline, &e);
 
     // Release resources
+    printf("Freeing buffer \n");
     free(buffer);
+    printf("deleting profile \n");
     rs2_delete_pipeline_profile(pipeline_profile);
+     printf("deleting profile  list\n");
+   
     rs2_delete_stream_profiles_list(stream_profile_list);
-    rs2_delete_stream_profile(stream_profile);
+     printf("deleting stream profile \n");
+ //  rs2_delete_stream_profile(stream_profile);
+       printf("deleting config \n");
+
     rs2_delete_config(config);
+        printf("deleting pipeline \n");
+
     rs2_delete_pipeline(pipeline);
+        printf("deleting device \n");
+
     rs2_delete_device(dev);
+        printf("deleting device list \n");
+
     rs2_delete_device_list(device_list);
+        printf("deleting context \n");
+
     rs2_delete_context(ctx);
 
     return EXIT_SUCCESS;
