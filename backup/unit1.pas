@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  librealsense2;
+  librealsense2, fb, BaseUnix,serial;
 
 type
 
@@ -14,8 +14,10 @@ type
 
   TForm1 = class(TForm)
     Button1: TButton;
+    Button2: TButton;
     Image1: TImage;
     procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
   private
 
   public
@@ -51,7 +53,33 @@ buffer:PChar;
 aout:PChar;
 one_meter:word;
 dev: Prs2_device;
-framebuffer: array[0..63,0..47] of byte;
+fb1: array[0..639,0..479] of word;
+framebuffer: array[0..639,0..479] of byte;
+fbfd:longint = 0;        // file handle
+vinfo:fb_var_screeninfo; // variable screen info.
+s2:array[0..31] of byte;
+s2w:array[0..15] of word absolute s2;
+s2l:array[0..7] of cardinal absolute s2;
+
+serialhandle : LongInt;
+ComPortName  : String;
+s,tmpstr,txt : String;
+ComOut,ComIn : String;
+ComPortNr    : integer;
+writecount   : integer;
+status       : LongInt;
+
+BitsPerSec   : LongInt;
+ByteSize     : Integer;
+Parity       : TParityType; { TParityType = (NoneParity, OddParity, EvenParity); }
+StopBits     : Integer;
+Flags        : TSerialFlags; { TSerialFlags = set of (RtsCtsFlowControl); }
+
+
+ErrorCode    : Integer;
+ i,il,fh:integer;
+ f:textfile;
+  b:char;
 {$R *.lfm}
 
 { TForm1 }
@@ -131,6 +159,9 @@ buffer := getmem(display_size);
 aout := nil;
 e1 := integer(@e);
 result:=e1;
+fbfd := fpopen('/dev/fb0', O_RDWR);
+fpioctl(fbfd, FBIOGET_VSCREENINFO, @vinfo);
+
 end;
 
 
@@ -149,7 +180,9 @@ var e:Prs2_error;
     pixels:PChar;
     pixel_index:integer;
     imagedata:PCardinal;
+      px:integer;   q:integer;
 
+      x1,y1,x2,y2,qq,qq2:integer;
 begin
 e := nil;
 form1.image1.picture.loadfromfile('./blank.jpg');
@@ -158,7 +191,7 @@ for kwas:=0 to 1000 do
   begin
   frames := rs2_pipeline_wait_for_frames(pipeline, RS2_DEFAULT_TIMEOUT, @e);
   num_of_frames := rs2_embedded_frames_count(frames, @e);
-  for i := 0 to num_of_frames do
+  for i := 0 to num_of_frames-1 do
     begin
     frame := rs2_extract_frame(frames, i, @e);
     if (0 = rs2_is_frame_extendable_to(frame, RS2_EXTENSION_DEPTH_FRAME, @e))  then
@@ -167,10 +200,38 @@ for kwas:=0 to 1000 do
       continue;
       end;
     depth_frame_data := PWord(rs2_get_frame_data(frame, @e));
+    for y1:=0 to 29 do //640/16
+      begin
+      for x1:=0 to 39 do
+        begin
+        qq2:=0;
+        for y2:=0 to 15 do
+          for x2:=0 to 15 do
+            begin
+            qq:= depth_frame_data[10240*y1+640*y2+16*x1+x2];
+            if qq > qq2 then qq2:=qq;
+           qq2:=(qq2 shr 6);   if qq2>255 then qq2:=255;
+             qq2:=qq2+qq2 shl 8 + qq2 shl 16 + qq2 shl 24;
+             qq2:=255 shl 16;
+            end;
+        fplseek(fbfd,4*1920*y1+4*x1,seek_set);
+        fpwrite(fbfd,qq2,4);
+   //     write(inttohex(qq2,4),' ');
+        end;
+  //   writeln;
+      end;
+  //    begin
+      //fplseek(fbfd,4*1920*y,seek_set);
+ //     for x:=0 to 639  do
+ //       begin
+ //       q:=(depth_frame_data+640*y+x)^ shr 5;
+ //      if q>255  then q:=255;
+ //      q:=q*$1010101;
+   //      px:=32768 div q;
+   //     px:=px+px shl 8 + px shl 16;
+ //       fpwrite(fbfd,q,4);
+ //       end;
 
-    for y:=0 to 479 do
-      for x:=0 to 639 do
-        imagedata[x+640*y]:=depth_frame_data[x+640*y];
     form1.button1.caption:=inttostr(kwas);
     form1.button1.refresh;
     form1.image1.refresh;
@@ -179,7 +240,7 @@ for kwas:=0 to 1000 do
     end;
   rs2_release_frame(frames);
   end;
-result:=depth_frame_data;
+//result:=depth_frame_data;
 end;
 
 
@@ -224,5 +285,148 @@ begin
   button1.caption:=inttohex(test,8);
 end;
 
+procedure TForm1.Button2Click(Sender: TObject);
+
+
+
+begin
+
+ComPortName:= '/dev/ttyAMA1';
+serialhandle := SerOpen(ComPortName);
+Flags:= [ ]; // None
+SerSetParams(serialhandle,230400,8,NoneParity,1,Flags);
+
+s2[0]:=$01 ;
+s2[1]:=$FF ;
+s2[2]:=$02 ;
+s2[3]:=$FE ;
+SerWrite(serialhandle, s2, 8);
+
+end;
+
 end.
+(*
+
+unit Unit1;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
+  serial, crt;
+
+type
+
+  { TForm1 }
+
+  TForm1 = class(TForm)
+    Button1: TButton;
+    Button2: TButton;
+    Memo1: TMemo;
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure FormActivate(Sender: TObject);
+    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
+    procedure FormCloseQuery(Sender: TObject; var CanClose: boolean);
+    procedure FormCreate(Sender: TObject);
+  private
+
+  public
+
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+{$R *.lfm}
+
+
+{ TForm1 }
+
+procedure TForm1.Button1Click(Sender: TObject);
+
+
+VAR
+   serialhandle : LongInt;
+   ComPortName  : String;
+   s,tmpstr,txt : String;
+   ComOut,ComIn : String;
+   ComPortNr    : integer;
+   writecount   : integer;
+   status       : LongInt;
+
+   BitsPerSec   : LongInt;
+   ByteSize     : Integer;
+   Parity       : TParityType; { TParityType = (NoneParity, OddParity, EvenParity); }
+   StopBits     : Integer;
+   Flags        : TSerialFlags; { TSerialFlags = set of (RtsCtsFlowControl); }
+     s2:array[0..31] of byte;
+
+   ErrorCode    : Integer;
+    i,il,fh:integer;
+    f:textfile;
+     b:char;
+
+begin
+form1.refresh;
+sleep( 1000);
+application.processmessages;
+s:=#$38+#$61+#$61+#$FF;
+s2[0]:=$55; s2[1]:=$AA; s2[2]:=$F0; s2[3]:=$0F;
+ComPortName:= '/dev/ttyAMA1';
+serialhandle := SerOpen(ComPortName);
+Flags:= [ ]; // None
+SerSetParams(serialhandle,115200,8,NoneParity,1,Flags);
+//fh:=fileopen('/dev/input/js0',$40)  ;
+repeat
+  application.processmessages
+  sleep(1000)
+until fileexists('/dev/input/js0');
+
+
+assignfile(f,'/dev/input/js0');
+reset(f);
+s2[0]:=$01 ;
+s2[1]:=$FF ;
+s2[2]:=$02 ;
+s2[3]:=$FE ;
+SerWrite(serialhandle, s2, 8);
+
+
+repeat
+  for i:=0 to 7 do
+    begin
+    read(f,b);
+    s2[i+4]:=byte(b);
+    end;
+
+ // memo1.lines.add (inttostr(il)); memo1.lines.add(inttostr(s2[0]) );  application.processmessages;
+  status := SerWrite(serialhandle, s2, 12);
+  form1.refresh;
+  application.processmessages;
+  until false;
+if status > 0 then
+  begin
+  { wait for an answer }
+  s:='';
+  ComIn:='';
+  while (Length(Comin)<10) do
+    begin
+    status:= SerRead(serialhandle, s[1], 10);
+    if (s[1]=#13) then status:=-1; { CR => end serial read }
+    if (status>0) then ComIn:=ComIn+s[1];
+    end;
+  end
+else
+  button1.caption:=inttostr(serialhandle);
+
+SerSync(serialhandle); { flush out any remaining before closure }
+SerFlushOutput(serialhandle); { discard any remaining output }
+SerClose(serialhandle);
+
+*)
 
