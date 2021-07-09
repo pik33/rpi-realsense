@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  librealsense2, fb, BaseUnix,serial;
+  librealsense2, fb, BaseUnix,serial2;
 
 type
 
@@ -16,6 +16,7 @@ type
     Button1: TButton;
     Button2: TButton;
     Image1: TImage;
+    Memo1: TMemo;
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
   private
@@ -34,6 +35,7 @@ FPS           =  30;                // Defines the rate of frames per second    
 STREAM_INDEX  =  0;                 // Defines the stream index, used for multiple streams of the same type //
 HEIGHT_RATIO  =  20;                // Defines the height ratio between the original frame to the new frame //
 WIDTH_RATIO   =  10;
+VISUAL_PRESET = RS2_L500_VISUAL_PRESET_SHORT_RANGE  ;
 
 var
 Form1: TForm1;
@@ -107,9 +109,11 @@ is_depth_sensor_found := 0;
 for i:= 0 to num_of_sensors do
   begin
   sensor := rs2_create_sensor(sensor_list, i, @e);
+ // rs2_set_option(Prs2_options(sensor),RS2_L500_VISUAL_PRESET_SHORT_RANGE,1,@e);
   is_depth_sensor_found := rs2_is_sensor_extendable_to(sensor, RS2_EXTENSION_DEPTH_SENSOR, @e);
   if (1 = is_depth_sensor_found) then
     begin
+
     depth_scale := rs2_get_option(Prs2_options(sensor), RS2_OPTION_DEPTH_UNITS, @e);
     rs2_delete_sensor(sensor);
     break;
@@ -131,16 +135,19 @@ var e:Prs2_error;
     aunit:double;
     v:integer;
     b:boolean;
+    json_content:PChar;
 
 begin
 e := nil;
 b:= initLibRealsense2('librealsense2.so');
+json_content:='{'+#13+#10+'"Visual Preset": 5'+#13+#10+'}'+#13+#10;
 v:=rs2_api_version;
 ctx := rs2_create_context(v, @e);
 v:=integer(ctx);
 device_list := rs2_query_devices(ctx, @e);
 dev_count := rs2_get_device_count(device_list, @e);
 dev := rs2_create_device(device_list, 0, @e);
+rs2_load_json(dev,json_content,26,@e);
 aunit := get_depth_unit_value(dev);
 one_meter := word(round(1.0 / aunit));
 pipeline :=  rs2_create_pipeline(ctx, @e);
@@ -187,7 +194,7 @@ begin
 e := nil;
 form1.image1.picture.loadfromfile('./blank.jpg');
 imagedata:=PCardinal( form1.image1.Picture.Bitmap.RawImage.Data);
-for kwas:=0 to 1000 do
+for kwas:=0 to 1000000 do
   begin
   frames := rs2_pipeline_wait_for_frames(pipeline, RS2_DEFAULT_TIMEOUT, @e);
   num_of_frames := rs2_embedded_frames_count(frames, @e);
@@ -200,41 +207,39 @@ for kwas:=0 to 1000 do
       continue;
       end;
     depth_frame_data := PWord(rs2_get_frame_data(frame, @e));
-    for y1:=0 to 29 do //640/16
+    for y1:=0 to 79 do //640/16
       begin
-      for x1:=0 to 39 do
+      for x1:=0 to 59 do
         begin
         qq2:=0;
-        for y2:=0 to 15 do
-          for x2:=0 to 15 do
+        for y2:=0 to 7 do
+          begin
+          for x2:=0 to 7 do
             begin
-            qq:= depth_frame_data[10240*y1+640*y2+16*x1+x2];
+            qq:= depth_frame_data[3200*y1+640*y2+5*x1+x2];
             if qq > qq2 then qq2:=qq;
-           qq2:=(qq2 shr 6);   if qq2>255 then qq2:=255;
-             qq2:=qq2+qq2 shl 8 + qq2 shl 16 + qq2 shl 24;
-             qq2:=255 shl 16;
+
             end;
-        fplseek(fbfd,4*1920*y1+4*x1,seek_set);
-        fpwrite(fbfd,qq2,4);
-   //     write(inttohex(qq2,4),' ');
+
+          end;
+         qq:=(qq2 shr 5);
+
+
+        if qq>254 then qq2:=254 else qq2:=qq;
+
+         if kwas=0 then
+            begin
+            form1.memo1.lines.add(inttostr(x1)+'   '+inttostr(y1)+'   '+inttohex(qq2,4) + '   '+ inttohex(qq,4));
+            end;
+
+        s2[0]:=qq2;
+        SerWrite(serialhandle, s2, 1);
         end;
-  //   writeln;
       end;
-  //    begin
-      //fplseek(fbfd,4*1920*y,seek_set);
- //     for x:=0 to 639  do
- //       begin
- //       q:=(depth_frame_data+640*y+x)^ shr 5;
- //      if q>255  then q:=255;
- //      q:=q*$1010101;
-   //      px:=32768 div q;
-   //     px:=px+px shl 8 + px shl 16;
- //       fpwrite(fbfd,q,4);
- //       end;
+    s2[0]:=$FF;
+    SerWrite(serialhandle, s2, 1);
 
     form1.button1.caption:=inttostr(kwas);
-    form1.button1.refresh;
-    form1.image1.refresh;
     application.ProcessMessages;
     rs2_release_frame(frame);
     end;
@@ -275,6 +280,12 @@ procedure TForm1.Button1Click(Sender: TObject);
 var test:integer;
 
 begin
+
+ComPortName:= '/dev/ttyAMA0';
+serialhandle := SerOpen(ComPortName);
+Flags:= [ ]; // None
+SerSetParams(serialhandle,4000000,8,NoneParity,1,Flags);
+
   button1.Caption:='Initializing';
   init1(0);
   application.processmessages;
@@ -283,6 +294,7 @@ begin
   application.processmessages;
   exit1(0);
   button1.caption:=inttohex(test,8);
+  SerClose(serialhandle);
 end;
 
 procedure TForm1.Button2Click(Sender: TObject);
@@ -294,14 +306,14 @@ begin
 ComPortName:= '/dev/ttyAMA1';
 serialhandle := SerOpen(ComPortName);
 Flags:= [ ]; // None
-SerSetParams(serialhandle,230400,8,NoneParity,1,Flags);
+SerSetParams(serialhandle,460800,8,NoneParity,1,Flags);
 
 s2[0]:=$01 ;
 s2[1]:=$FF ;
 s2[2]:=$02 ;
 s2[3]:=$FE ;
 SerWrite(serialhandle, s2, 8);
-
+SerClose(serialhandle);
 end;
 
 end.
